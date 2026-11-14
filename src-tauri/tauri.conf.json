@@ -20,7 +20,8 @@
         "center": true,
         "visible": false,
         "shadow": true,
-        "backgroundColor": "#1d2021"
+        "backgroundColor": "#1d2021",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
       }
     ],
     "security": {
