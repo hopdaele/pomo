@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-phase="focus">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pomo</title>
+<link rel="preload" href="fonts/CascadiaMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/CascadiaMono-Bold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<div class="app">
+  <header class="titlebar" data-tauri-drag-region>
+    <span class="brand" data-tauri-drag-region>pomo</span>
+    <div class="tb-actions">
+      <button class="tb-btn" id="btn-min" title="Minimize" tabindex="-1" aria-label="Minimize">
+        <svg viewBox="0 0 12 12"><path d="M2.5 6h7"/></svg>
+      </button>
+      <button class="tb-btn tb-close" id="btn-close" title="Hide to tray" tabindex="-1" aria-label="Hide to tray">
+        <svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <nav class="modes" aria-label="Mode">
+    <button class="mode" data-mode="focus">Focus<kbd>1</kbd></button>
+    <button class="mode" data-mode="short">Short<kbd>2</kbd></button>
+    <button class="mode" data-mode="long">Long<kbd>3</kbd></button>
+  </nav>
+
+  <section class="dial">
+    <div class="glow"></div>
+    <svg class="ring" id="ring" viewBox="0 0 240 240" aria-hidden="true">
+      <defs>
+        <linearGradient id="g-focus" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="sf-a"/><stop offset="1" class="sf-b"/></linearGradient>
+        <linearGradient id="g-short" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="ss-a"/><stop offset="1" class="ss-b"/></linearGradient>
+        <linearGradient id="g-long" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="sl-a"/><stop offset="1" class="sl-b"/></linearGradient>
+      </defs>
+      <circle class="track" cx="120" cy="120" r="108"/>
+      <g transform="rotate(-90 120 120)">
+        <circle class="arc arc-focus" cx="120" cy="120" r="108" stroke="url(#g-focus)"/>
+        <circle class="arc arc-short" cx="120" cy="120" r="108" stroke="url(#g-short)"/>
+        <circle class="arc arc-long" cx="120" cy="120" r="108" stroke="url(#g-long)"/>
+      </g>
+    </svg>
+    <div class="readout">
+      <div class="time" id="time">25:00</div>
+      <div class="phase" id="phase">Focus</div>
+    </div>
+  </section>
+
+  <div class="dots" id="dots" aria-label="Sessions this cycle"></div>
+
+  <div class="controls">
+    <div class="ctl"><button class="btn" id="btn-reset">Reset</button><kbd>R</kbd></div>
+    <div class="ctl"><button class="btn primary" id="btn-toggle">Start</button><kbd>space</kbd></div>
+    <div class="ctl"><button class="btn" id="btn-skip">Skip</button><kbd>S</kbd></div>
+  </div>
+
+  <footer class="footer">
+    <span id="today">today · 0 sessions · 0 min</span>
+    <button class="link" id="btn-help">? keys</button>
+  </footer>
+</div>
+
+<section class="sheet" id="help" aria-label="Keyboard shortcuts" inert>
+  <div class="sheet-head"><h2>Keyboard</h2><kbd>esc</kbd></div>
+  <dl class="keys">
+    <dt>space</dt><dd>start / pause</dd>
+    <dt>R</dt><dd>reset</dd>
+    <dt>S</dt><dd>skip phase</dd>
+    <dt>1 2 3</dt><dd>focus / short / long</dd>
+    <dt>,</dt><dd>settings</dd>
+    <dt>M</dt><dd>mute</dd>
+    <dt>P</dt><dd>always on top</dd>
+    <dt>?</dt><dd>this help</dd>
+    <dt>esc</dt><dd>close panel</dd>
+    <dt>ctrl Q</dt><dd>quit</dd>
+    <dt>ctrl alt space</dt><dd>start / pause (global)</dd>
+    <dt>ctrl alt P</dt><dd>show / hide (global)</dd>
+  </dl>
+</section>
+
+<div class="pulse" id="pulse"></div>
+<div class="toast" id="toast" role="status"></div>
+</body>
+</html>
