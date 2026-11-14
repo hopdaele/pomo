@@ -12,24 +12,18 @@
 }
 
 :root {
-  --bg: #1d2021;
-  --surface: #282828;
-  --raised: #3c3836;
-  --border: #504945;
+  /* flat OLED: true-black base, gruvbox hard-dark surfaces, no shadows/glows */
+  --bg: #000000;
+  --surface: #1d2021;
+  --raised: #282828;
+  --border: #3c3836;
   --fg: #ebdbb2;
   --muted: #a89984;
   --focus: #fe8019;
-  --focus-2: #fb4934;
   --short: #b8bb26;
-  --short-2: #fabd2f;
   --long: #83a598;
-  --long-2: #8ec07c;
-  --on-accent: #1d2021;
+  --on-accent: #000000;
   --danger: #cc241d;
-  --shadow: 0 8px 24px rgba(0, 0, 0, .35);
-  --shadow-sm: 0 2px 6px rgba(0, 0, 0, .25);
-  --vignette: rgba(12, 6, 0, .45);
-  --glow-strength: .55;
   --accent: var(--focus);
   --ease: cubic-bezier(.2, .8, .2, 1);
   --t-theme: .4s;
@@ -43,16 +37,9 @@
   --fg: #3c3836;
   --muted: #7c6f64;
   --focus: #af3a03;
-  --focus-2: #9d0006;
   --short: #98971a;
-  --short-2: #b57614;
   --long: #458588;
-  --long-2: #427b58;
   --on-accent: #fbf1c7;
-  --shadow: 0 8px 24px rgba(124, 111, 100, .22);
-  --shadow-sm: 0 2px 6px rgba(124, 111, 100, .18);
-  --vignette: rgba(214, 93, 14, .09);
-  --glow-strength: .35;
   color-scheme: light;
 }
 :root[data-phase="short"] { --accent: var(--short); }
@@ -70,15 +57,6 @@ body {
   -webkit-user-select: none;
   cursor: default;
   transition: background-color var(--t-theme), color var(--t-theme);
-}
-/* warm vignette, static */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(ellipse 85% 75% at 50% 42%, transparent 55%, var(--vignette) 100%);
-  z-index: 0;
 }
 button, kbd { font: inherit; color: inherit; }
 button { background: none; border: 0; cursor: pointer; }
@@ -149,7 +127,7 @@ kbd {
   transition: background-color var(--t-theme), color var(--t-theme), transform .08s;
 }
 .mode:hover { color: var(--fg); }
-.mode.active { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); }
+.mode.active { background: var(--surface); color: var(--accent); }
 
 /* ---------- dial ---------- */
 .dial {
@@ -158,24 +136,8 @@ kbd {
   margin: 18px auto 10px;
   flex: none;
 }
-.glow {
-  position: absolute;
-  inset: -22px;
-  border-radius: 50%;
-  color: var(--accent);
-  background: radial-gradient(closest-side, transparent 70%, currentColor 84%, transparent 100%);
-  opacity: 0;
-  will-change: opacity;
-  transition: color var(--t-theme), opacity .6s;
-}
-:root.running .glow {
-  animation: breathe 4s ease-in-out infinite;
-}
-@keyframes breathe {
-  0%, 100% { opacity: calc(var(--glow-strength) * .25); }
-  50%      { opacity: var(--glow-strength); }
-}
-.ring { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+/* own layer: the per-frame dashoffset repaint stays inside the ring */
+.ring { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; will-change: transform; }
 .track { fill: none; stroke: var(--raised); stroke-width: 10; transition: stroke var(--t-theme); }
 .arc {
   fill: none;
@@ -183,15 +145,20 @@ kbd {
   stroke-linecap: round;
   stroke-dasharray: 678.584;
   stroke-dashoffset: var(--off, 0);
-  transition: stroke-dashoffset var(--dur, 1s) var(--ring-ease, linear), opacity var(--t-theme);
   opacity: 0;
+  visibility: hidden; /* inactive arcs: not painted, no running transition */
+  transition: opacity var(--t-theme), visibility 0s linear var(--t-theme);
 }
 :root[data-phase="focus"] .arc-focus,
 :root[data-phase="short"] .arc-short,
-:root[data-phase="long"]  .arc-long { opacity: 1; }
-.sf-a { stop-color: var(--focus); }  .sf-b { stop-color: var(--focus-2); }
-.ss-a { stop-color: var(--short); }  .ss-b { stop-color: var(--short-2); }
-.sl-a { stop-color: var(--long); }   .sl-b { stop-color: var(--long-2); }
+:root[data-phase="long"]  .arc-long {
+  opacity: 1;
+  visibility: visible;
+  transition: stroke-dashoffset var(--dur, 1s) var(--ring-ease, linear), opacity var(--t-theme), visibility 0s;
+}
+.arc-focus { stroke: var(--focus); }
+.arc-short { stroke: var(--short); }
+.arc-long  { stroke: var(--long); }
 
 .readout {
   position: absolute; inset: 0;
@@ -232,7 +199,6 @@ kbd {
   border-radius: 12px;
   background: var(--surface);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
   transition: background-color var(--t-theme), border-color var(--t-theme), color var(--t-theme), transform .09s ease-out;
 }
 .btn:hover { background: var(--raised); }
@@ -263,11 +229,12 @@ kbd {
   position: fixed;
   left: 0; right: 0; bottom: 0; top: 36px;
   z-index: 5;
-  background: var(--surface);
+  background: var(--bg);
+  border-top: 1px solid var(--border);
   border-radius: 14px 14px 0 0;
-  box-shadow: 0 -6px 28px rgba(0, 0, 0, .3);
-  padding: 16px 18px;
+  padding: 14px 16px;
   overflow-y: auto;
+  scrollbar-width: none;
   opacity: 0;
   transform: translateY(18px);
   visibility: hidden;
@@ -286,10 +253,10 @@ kbd {
 .keys dd { color: var(--fg); }
 
 /* ---------- settings rows ---------- */
-.rows { display: flex; flex-direction: column; gap: 3px; }
+.rows { display: flex; flex-direction: column; gap: 2px; }
 .row {
   display: flex; align-items: center; justify-content: space-between;
-  min-height: 34px;
+  min-height: 31px;
   padding: 0 10px;
   border-radius: 10px;
   color: var(--fg);
@@ -334,7 +301,7 @@ kbd {
   pointer-events: none;
   opacity: 0;
   border-radius: 2px;
-  box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 60px var(--accent);
+  box-shadow: inset 0 0 0 3px var(--accent);
 }
 .toast {
   position: fixed;
@@ -342,10 +309,10 @@ kbd {
   z-index: 10;
   padding: 7px 12px;
   border-radius: 10px;
-  background: var(--raised);
+  background: var(--surface);
+  border: 1px solid var(--border);
   color: var(--fg);
   font-size: 11px;
-  box-shadow: var(--shadow);
   pointer-events: none;
   opacity: 0;
   transform: translate(-50%, 6px);
@@ -362,5 +329,4 @@ kbd {
     transition-duration: 0s !important;
     transition-delay: 0s !important;
   }
-  :root.running .glow { opacity: calc(var(--glow-strength) * .6); }
 }

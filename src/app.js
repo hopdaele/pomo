@@ -209,7 +209,7 @@
 
   // ---------- timer state (all timing from timestamps) ----------
   const dur = (m) => cfg[m] * 60000;
-  const S = { mode: 'focus', running: false, endAt: 0, remaining: dur('focus'), total: dur('focus'), cycle: 0, runId: 0 };
+  const S = { mode: 'focus', running: false, endAt: 0, remaining: dur('focus'), total: dur('focus'), cycle: today.cycle || 0, runId: 0 };
   let visible = !document.hidden;
   let tickT = 0;
   let panel = null; // 'help' | 'settings' | null
@@ -269,7 +269,11 @@
     if (rem <= 0) { complete(S.runId); return; }
     const d = rem % 1000 || 1000;
     el.time.textContent = mmss(rem);
-    setRing(rem - d, d); // glide to where we will be at the next tick
+    // Glide (1s linear) to where we'll be at the next tick -- but only when the arc moves >= 1 device px/s.
+    // On long phases the per-second step is sub-pixel, so a plain 1 Hz update looks identical and avoids
+    // ~60 repaints/s (measured: ~34% of a core -> ~1%).
+    const pxPerSec = (C * 1000 / S.total) * (236 / 240) * devicePixelRatio;
+    setRing(rem - d, pxPerSec >= 1 ? d : 0);
     tickT = setTimeout(tick, d + 4);
   }
 
@@ -319,12 +323,17 @@
   function reset() { setMode(S.mode); }
 
   function nextMode(completedFocus) {
+    let next = 'focus';
     if (S.mode === 'focus') {
       if (completedFocus) S.cycle++;
-      return completedFocus && S.cycle % cfg.interval === 0 ? 'long' : 'short';
+      next = completedFocus && S.cycle % cfg.interval === 0 ? 'long' : 'short';
+    } else if (S.mode === 'long') {
+      S.cycle = 0;
     }
-    if (S.mode === 'long') S.cycle = 0;
-    return 'focus';
+    if (today.date !== dayKey()) today = freshDay();
+    today.cycle = S.cycle;
+    store.set('pomo.today', today);
+    return next;
   }
 
   function skip() { setMode(nextMode(false)); }
