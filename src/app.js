@@ -34,6 +34,7 @@
     toggle: $('#btn-toggle'), reset: $('#btn-reset'), skip: $('#btn-skip'),
     today: $('#today'), help: $('#help'), pulse: $('#pulse'), toast: $('#toast'),
     settings: $('#settings'), rows: $('#rows'), pin: $('#btn-pin'), app: $('.app'),
+    miniDone: $('#mini-done'), miniLeft: $('#mini-left'), miniTime: $('#mini-time'), miniLabel: $('#mini-label'),
     modes: [...document.querySelectorAll('.mode')],
   };
 
@@ -126,7 +127,7 @@
         previewT = setTimeout(() => chime('preview'), 220);
         break;
       case 'onTop':
-        win.setAlwaysOnTop(cfg.onTop).catch(() => {});
+        win.setAlwaysOnTop(cfg.onTop || mini).catch(() => {});
         el.pin.classList.toggle('on', cfg.onTop);
         break;
       case 'theme': root.dataset.theme = cfg.theme; break;
@@ -224,7 +225,10 @@
     const label = S.running
       ? LABEL[S.mode]
       : `${mmss(S.remaining)} · ${LABEL[S.mode]}${S.remaining < S.total ? ' (paused)' : ''}`;
-    invoke('sync_timer', { endAt: S.running ? S.endAt : null, label, id: S.runId }).catch(() => {});
+    invoke('sync_timer', {
+      endAt: S.running ? S.endAt : null, label, id: S.runId,
+      total: S.total, remaining: Math.round(remainingNow()), phase: S.mode,
+    }).catch(() => {});
   }
 
   function setRing(remTarget, ms, ease) {
@@ -258,6 +262,24 @@
     el.modes.forEach((b) => b.classList.toggle('active', b.dataset.mode === S.mode));
     renderDots();
     renderToday();
+    renderMini(rem);
+  }
+
+  // ---------- mini bar: `● [█████░░░░░] 23:41 focus` ----------
+  const MINI = { w: 300, h: 40, cells: 16 };
+  const MINI_LABEL = { focus: 'focus', short: 'break', long: 'long' };
+  let mini = false;
+  let miniCells = -1;
+  function renderMini(rem) {
+    if (!mini) return;
+    const filled = Math.min(MINI.cells, Math.floor((1 - rem / S.total) * MINI.cells + 1e-6));
+    if (filled !== miniCells) { // bar text changes only every total/16 (~94 s on a 25 min focus)
+      miniCells = filled;
+      el.miniDone.textContent = '█'.repeat(filled);
+      el.miniLeft.textContent = '░'.repeat(MINI.cells - filled);
+    }
+    el.miniTime.textContent = mmss(rem);
+    el.miniLabel.textContent = S.running || S.remaining >= S.total ? MINI_LABEL[S.mode] : 'paused';
   }
 
   // 1 Hz, only while running AND visible. Aligned to whole-second boundaries of remaining time.
@@ -268,6 +290,7 @@
     const rem = S.endAt - Date.now();
     if (rem <= 0) { complete(S.runId); return; }
     const d = rem % 1000 || 1000;
+    if (mini) { renderMini(rem); tickT = setTimeout(tick, d + 4); return; }
     // Glide (1s linear) to where we'll be at the next tick -- but only when the arc moves >= 2 device px/s.
     // On long phases the per-second step is (near) sub-pixel, so a plain 1 Hz update looks the same and
     // avoids ~60 repaints/s (measured: ~34% of a core -> ~1%). Ring size is read before any DOM writes.
@@ -422,11 +445,41 @@
   // A non-resizable window keeps its physical size when it lands on a monitor with a different
   // scale (or leaves full screen there), cropping the UI. Re-assert the logical size.
   const LogicalSize = (T.dpi || T.window).LogicalSize;
-  const fitWindow = () => { if (!fullscreen) win.setSize(new LogicalSize(360, 520)).catch(() => {}); };
+  const fitWindow = () => {
+    if (fullscreen) return;
+    win.setSize(mini ? new LogicalSize(MINI.w, MINI.h) : new LogicalSize(360, 520)).catch(() => {});
+  };
   win.onScaleChanged(fitWindow).catch(() => {});
+
+  // Mini mode: the same window shrinks to a CLI-style strip (no second webview -> +0 RAM).
+  // Always on top while mini; double-click, B or Esc to go back.
+  function setMini(on, quiet) {
+    if (on === mini) return Promise.resolve();
+    const go = () => {
+      mini = on;
+      miniCells = -1;
+      closePanel();
+      root.classList.toggle('is-mini', on);
+      try { localStorage.setItem('pomo.mini', on ? '1' : ''); } catch { /* ignore */ }
+      win.setAlwaysOnTop(on || cfg.onTop).catch(() => {});
+      fitWindow();
+      render();
+      if (S.running) tick(); else setRing(S.remaining, 0);
+    };
+    return fullscreen && on ? exitFullscreen().then(go) : Promise.resolve(go());
+  }
+  const toggleMini = () => setMini(!mini);
+
+  function exitFullscreen() {
+    return win.setFullscreen(false).then(() => {
+      fullscreen = false;
+      root.classList.remove('fs');
+    }).catch(() => {});
+  }
 
   function toggleFullscreen() {
     const on = !fullscreen;
+    if (on && mini) { setMini(false, true).then(toggleFullscreen); return; }
     closePanel();
     win.setFullscreen(on).then(() => {
       fullscreen = on;
@@ -469,9 +522,11 @@
     if (e.ctrlKey || e.altKey || e.metaKey || /^F\d+$/.test(k)) { e.preventDefault(); return; } // block browser accelerators
     if (k === 'Escape') {
       e.preventDefault();
-      if (panel) closePanel(); else if (fullscreen) toggleFullscreen();
+      if (panel) closePanel(); else if (fullscreen) toggleFullscreen(); else if (mini) setMini(false);
       return;
     }
+    // panels don't fit in the mini strip: expand first
+    if (mini && (k === ',' || k === '?') && !e.repeat) { setMini(false, true).then(() => togglePanel(k === ',' ? 'settings' : 'help')); return; }
     if (k === 'Tab' && panel === 'help') { e.preventDefault(); return; }
     if (panel === 'settings' && settingsKey(e)) return;
     if (e.repeat) return;
@@ -482,6 +537,7 @@
       case 'm': case 'M': toggleMute(); break;
       case 'p': case 'P': toggleOnTop(); break;
       case 'f': case 'F': toggleFullscreen(); break;
+      case 'b': case 'B': toggleMini(); break;
       case 'r': case 'R': press(el.reset); reset(); break;
       case 's': case 'S': press(el.skip); skip(); break;
       case '1': setMode('focus'); break;
@@ -513,6 +569,8 @@
   $('#btn-settings').addEventListener('click', () => togglePanel('settings'));
   el.pin.addEventListener('click', toggleOnTop);
   $('#btn-fs').addEventListener('click', toggleFullscreen);
+  $('#btn-mini').addEventListener('click', () => setMini(true));
+  $('#mini').addEventListener('dblclick', () => setMini(false));
   $('#btn-close').addEventListener('click', hideToTray);
   $('#btn-min').addEventListener('click', () => { setVisible(false); win.minimize(); });
   el.help.addEventListener('click', closePanel);
@@ -532,6 +590,7 @@
   el.pin.classList.toggle('on', cfg.onTop);
   if (cfg.onTop) win.setAlwaysOnTop(true).catch(() => {});
   applyCfg('globalKeys');
+  try { if (localStorage.getItem('pomo.mini')) setMini(true, true); } catch { /* ignore */ }
   if (!cfg.startMin) {
     win.show().then(() => win.setFocus()).catch(() => {});
   }

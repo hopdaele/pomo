@@ -16,6 +16,7 @@ Most focus timers are either bloated Electron apps or browser tabs you lose behi
 - **Featherweight.** 1.3 MB installer, about 70 MB RAM including the web runtime, effectively 0% CPU when idle or hidden.
 - **Accurate.** Timing is computed from timestamps, never from counting ticks, so it survives sleep, lag and background throttling. Phase ends fire on time even when Pomo is hidden in the tray.
 - **Second-monitor full screen.** Drag Pomo to another screen and press **F**: a huge, calm ring on pure black that fades its controls away until you mouse over it.
+- **Always in view.** Press **B** for a slim always-on-top mini bar (`● [██████░░░░] 18:42 focus`), watch progress fill Pomo's taskbar button, or glance at the tray icon's draining ring and minutes left.
 - **Easy on the eyes.** Flat gruvbox palette on true black (great on OLED), plus a warm light theme.
 - **Private.** No account, no telemetry, no network access. Your settings and stats never leave your PC.
 
@@ -26,7 +27,9 @@ Most focus timers are either bloated Electron apps or browser tabs you lose behi
 | **Pomodoro cycle** | Focus 25 · Short break 5 · Long break 15, long break after every 4 focus sessions. All adjustable (1–180 min). |
 | **Auto-start** | Optionally roll straight into the next phase. |
 | **Gentle alerts** | Windows notification + a soft synthesized chime (volume control, one-key mute) + a window pulse. |
-| **Tray** | Live `MM:SS · Focus` tooltip; left-click to show/hide; menu with Start/Pause, Skip, Quit. |
+| **Mini bar** | `B` shrinks Pomo to a one-line, CLI-style strip that stays on top. Drag it anywhere (e.g. just above the taskbar); double-click, `B` or `Esc` to expand. |
+| **Taskbar progress** | Pomo's taskbar button fills as the phase runs and turns yellow when paused. |
+| **Live tray icon** | The tray icon becomes a draining ring in the phase colour with the minutes left; live `MM:SS · Focus` tooltip; left-click to show/hide; menu with Start/Pause, Skip, Quit. Tip: drag the icon out of the `^` overflow to keep it next to the clock. |
 | **Global hotkeys** | `Ctrl+Alt+Space` start/pause and `Ctrl+Alt+P` show/hide from any app (can be turned off). |
 | **Daily stats** | Today's completed sessions and focus minutes, reset at local midnight. |
 | **Always on top** | Pin the window above everything with **P**. |
@@ -36,7 +39,7 @@ Most focus timers are either bloated Electron apps or browser tabs you lose behi
 
 ## Install
 
-1. Download **`Pomo_1.0.0_x64-setup.exe`**.
+1. Download **`Pomo_1.1.0_x64-setup.exe`**.
 2. Run it. It installs for your user only, so no admin rights are needed.
 3. Launch **Pomo** from the Start menu.
 
@@ -54,7 +57,8 @@ Most focus timers are either bloated Electron apps or browser tabs you lose behi
 | `R` | Reset phase | `M` | Mute / unmute |
 | `S` | Skip phase | `P` | Always on top |
 | `1` `2` `3` | Focus / Short / Long | `F` / `F11` | Full screen (current monitor) |
-| `?` | Shortcut overlay | `Esc` | Close panel / exit full screen |
+| `?` | Shortcut overlay | `B` | Mini bar (always on top) |
+| `Esc` | Close panel / exit full screen or mini | | |
 | `Ctrl+Q` | Quit | `Ctrl+Alt+Space` · `Ctrl+Alt+P` | Global start/pause · show/hide |
 
 **Settings** (press `,`): use `↑` `↓` to move, `←` `→` (or `-` `+`, hold `Shift` for ×5) to change, and `Enter`/`Space` to toggle. Changes save instantly.
@@ -62,6 +66,7 @@ Most focus timers are either bloated Electron apps or browser tabs you lose behi
 **Closing the window** with `×` hides Pomo to the tray; the timer keeps running. Quit with `Ctrl+Q` or the tray menu.
 
 <p align="center"><img src="docs/fullscreen.png" width="720" alt="Pomo full-screen mode"></p>
+<p align="center"><img src="docs/mini.png" alt="Pomo mini bar"></p>
 
 ## Performance
 
@@ -73,6 +78,8 @@ Measured on the release build (Windows 11, 12-thread CPU):
 | Memory (app + WebView2 processes) | ~70–74 MB |
 | CPU: idle / paused / hidden | 0.03–0.12% |
 | CPU: running, window visible | ~0.12% (≈1.5% of one core) |
+| CPU: running in mini bar | ~0.16% (≈1.9% of one core) |
+| CPU: running, hidden to tray | ~0.03% (≈0.4% of one core) |
 | Phase-end accuracy while hidden in tray | fired within 17 ms |
 
 ## Privacy

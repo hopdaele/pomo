@@ -13,11 +13,14 @@ const TRAY_ID: &str = "pomo-tray";
 
 /// The single phase-end deadline. JS owns all timer logic; Rust only guarantees
 /// that the end fires on time even when the WebView is hidden/throttled.
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Deadline {
     end_at: Option<u64>, // unix ms (same clock as JS Date.now())
-    label: String,
+    label: String,       // running: phase label; paused/idle: full tooltip text
     id: u64,
+    total: u64,     // phase length, ms
+    remaining: u64, // ms left when paused/idle
+    phase: String,  // "focus" | "short" | "long"
     version: u64,
 }
 
@@ -129,20 +132,156 @@ fn hide_window(app: &AppHandle) {
 }
 
 /// JS -> Rust: running deadline (end_at) or None when paused/idle.
+/// All tray/taskbar visuals are drawn by the ticker thread, so they never race.
 #[tauri::command]
-fn sync_timer(app: AppHandle, ticker: State<'_, Arc<Ticker>>, end_at: Option<u64>, label: String, id: u64) {
+#[allow(clippy::too_many_arguments)]
+fn sync_timer(
+    ticker: State<'_, Arc<Ticker>>,
+    end_at: Option<u64>,
+    label: String,
+    id: u64,
+    total: u64,
+    remaining: u64,
+    phase: String,
+) {
     #[cfg(debug_assertions)]
-    eprintln!("[pomo] {} sync end_at={:?} label={} id={}", now_ms(), end_at, label, id);
-    match end_at {
-        Some(e) => set_tip(&app, &format!("{} · {}", fmt_mmss(e.saturating_sub(now_ms())), label)),
-        None => set_tip(&app, &label),
-    }
+    eprintln!("[pomo] {} sync end_at={:?} label={} id={} total={} rem={} phase={}", now_ms(), end_at, label, id, total, remaining, phase);
     let mut st = ticker.state.lock().unwrap();
     st.end_at = end_at;
     st.label = label;
     st.id = id;
+    st.total = total.max(1);
+    st.remaining = remaining;
+    st.phase = phase;
     st.version += 1;
     ticker.cv.notify_all();
+}
+
+// ---------- live tray icon + taskbar progress ----------
+
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    Idle,
+    Running,
+    Paused,
+}
+
+/// 3x5 pixel digits, one u16 per glyph (row-major, 15 bits).
+const DIGITS: [u16; 10] = [
+    0b111_101_101_101_111, 0b010_110_010_010_111, 0b111_001_111_100_111, 0b111_001_111_001_111,
+    0b101_101_111_001_001, 0b111_100_111_001_111, 0b111_100_111_101_111, 0b111_001_001_001_001,
+    0b111_101_111_101_111, 0b111_101_111_001_111,
+];
+
+/// 32x32 RGBA: black disc, draining phase-coloured ring, minutes left in pixel digits.
+/// Pure CPU, ~16k samples, only called when the minute or ring step changes.
+fn render_tray_icon(frac_left: f32, minutes: u64, accent: [u8; 3]) -> Vec<u8> {
+    const S: usize = 32;
+    const TRACK: [f32; 3] = [60.0, 56.0, 54.0]; // #3c3836
+    let acc = [accent[0] as f32, accent[1] as f32, accent[2] as f32];
+    let mut px = vec![0u8; S * S * 4];
+    for y in 0..S {
+        for x in 0..S {
+            let (mut disc, mut track, mut arc) = (0u32, 0u32, 0u32);
+            for sy in 0..4 {
+                for sx in 0..4 {
+                    let fx = x as f32 + (sx as f32 + 0.5) / 4.0 - 16.0;
+                    let fy = y as f32 + (sy as f32 + 0.5) / 4.0 - 16.0;
+                    let r = (fx * fx + fy * fy).sqrt();
+                    if r <= 16.0 {
+                        disc += 1;
+                    }
+                    if (11.5..=15.0).contains(&r) {
+                        // 0 at 12 o'clock, increasing clockwise
+                        let a = (fx.atan2(-fy) / std::f32::consts::TAU + 1.0) % 1.0;
+                        if a <= frac_left { arc += 1 } else { track += 1 }
+                    }
+                }
+            }
+            let (t, k) = (track as f32 / 16.0, arc as f32 / 16.0);
+            let i = (y * S + x) * 4;
+            for c in 0..3 {
+                px[i + c] = (TRACK[c] * t + acc[c] * k).min(255.0) as u8; // over black
+            }
+            px[i + 3] = (disc as f32 / 16.0 * 255.0) as u8;
+        }
+    }
+    // digits: 3x5 font at 2x -> 6x10 each, 2px gap, centred, cream #ebdbb2
+    let text = minutes.min(99).to_string();
+    let n = text.len();
+    let w = n * 6 + (n - 1) * 2;
+    let (x0, y0) = ((S - w) / 2, 11);
+    for (di, ch) in text.bytes().enumerate() {
+        let glyph = DIGITS[(ch - b'0') as usize];
+        for row in 0..5 {
+            for col in 0..3 {
+                if glyph >> (14 - (row * 3 + col)) & 1 == 1 {
+                    for dy in 0..2 {
+                        for dx in 0..2 {
+                            let (x, y) = (x0 + di * 8 + col * 2 + dx, y0 + row * 2 + dy);
+                            let i = (y * S + x) * 4;
+                            px[i..i + 4].copy_from_slice(&[0xeb, 0xdb, 0xb2, 0xff]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    px
+}
+
+fn accent_for(phase: &str, kind: Kind) -> [u8; 3] {
+    match (kind, phase) {
+        (Kind::Paused, _) => [0xa8, 0x99, 0x84], // muted = paused
+        (_, "short") => [0xb8, 0xbb, 0x26],
+        (_, "long") => [0x83, 0xa5, 0x98],
+        _ => [0xfe, 0x80, 0x19],
+    }
+}
+
+/// Redraws the tray icon / taskbar progress only when what they show actually changes.
+#[derive(Default)]
+struct Visuals {
+    icon_key: Option<(u8, u64, u32, u8)>, // (kind, minutes, ring step, phase)
+    bar_key: Option<(u8, u64)>,           // (kind, percent)
+}
+
+impl Visuals {
+    fn update(&mut self, app: &AppHandle, d: &Deadline, rem: u64, kind: Kind) {
+        use tauri::window::{ProgressBarState, ProgressBarStatus};
+        let total = d.total.max(1);
+        let frac_left = (rem as f32 / total as f32).clamp(0.0, 1.0);
+        let minutes = rem.div_ceil(60_000);
+        let step = (frac_left * 64.0).ceil() as u32;
+        let phase_id = match d.phase.as_str() { "short" => 1, "long" => 2, _ => 0 };
+
+        let icon_key = if kind == Kind::Idle { (0, 0, 0, 0) } else { (kind as u8, minutes, step, phase_id) };
+        if self.icon_key != Some(icon_key) {
+            self.icon_key = Some(icon_key);
+            if let Some(tray) = app.tray_by_id(TRAY_ID) {
+                let img = if kind == Kind::Idle {
+                    tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")).ok()
+                } else {
+                    Some(tauri::image::Image::new_owned(render_tray_icon(frac_left, minutes, accent_for(&d.phase, kind)), 32, 32))
+                };
+                let _ = tray.set_icon(img);
+            }
+        }
+
+        let pct = (((total - rem.min(total)) as f64 / total as f64) * 100.0).round() as u64;
+        let bar_key = if kind == Kind::Idle { (0, 0) } else { (kind as u8, pct) };
+        if self.bar_key != Some(bar_key) {
+            self.bar_key = Some(bar_key);
+            if let Some(w) = app.get_webview_window("main") {
+                let state = match kind {
+                    Kind::Idle => ProgressBarState { status: Some(ProgressBarStatus::None), progress: None },
+                    Kind::Running => ProgressBarState { status: Some(ProgressBarStatus::Normal), progress: Some(pct.max(1)) },
+                    Kind::Paused => ProgressBarState { status: Some(ProgressBarStatus::Paused), progress: Some(pct.max(1)) },
+                };
+                let _ = w.set_progress_bar(state);
+            }
+        }
+    }
 }
 
 #[tauri::command]
@@ -150,31 +289,57 @@ fn quit(app: AppHandle) {
     app.exit(0);
 }
 
+/// One thread owns the deadline and every tray/taskbar update. It parks (zero CPU) while
+/// paused/idle and wakes once per displayed second while running.
 fn spawn_ticker(app: AppHandle, t: Arc<Ticker>) {
-    std::thread::spawn(move || loop {
-        let mut st = t.state.lock().unwrap();
-        while st.end_at.is_none() {
-            st = t.cv.wait(st).unwrap();
-        }
-        let end = st.end_at.unwrap();
-        let (id, ver, label) = (st.id, st.version, st.label.clone());
-        let now = now_ms();
-        if now >= end {
-            st.end_at = None;
+    std::thread::spawn(move || {
+        let mut seen = u64::MAX;
+        let mut vis = Visuals::default();
+        loop {
+            let mut st = t.state.lock().unwrap();
+            while st.end_at.is_none() && st.version == seen {
+                st = t.cv.wait(st).unwrap();
+            }
+            let d = st.clone();
             drop(st);
-            #[cfg(debug_assertions)]
-            eprintln!("[pomo] {} phase-end id={} late={}ms", now, id, now - end);
-            let _ = app.emit("phase-end", id);
-            continue;
-        }
-        drop(st);
-        let rem = end - now;
-        set_tip(&app, &format!("{} · {}", fmt_mmss(rem), label));
-        // Sleep until the next whole-second boundary of the remaining time (or a change).
-        let wait = match rem % 1000 { 0 => 1000, r => r };
-        let st = t.state.lock().unwrap();
-        if st.version == ver {
-            let _ = t.cv.wait_timeout(st, Duration::from_millis(wait)).unwrap();
+            seen = d.version;
+            // Never hold the lock below: tray/window calls hop to the main thread.
+            match d.end_at {
+                None => {
+                    if d.label.is_empty() {
+                        continue; // JS hasn't synced yet
+                    }
+                    set_tip(&app, &d.label);
+                    let kind = if d.remaining < d.total { Kind::Paused } else { Kind::Idle };
+                    vis.update(&app, &d, d.remaining, kind);
+                }
+                Some(end) => {
+                    let now = now_ms();
+                    if now >= end {
+                        let mut st = t.state.lock().unwrap();
+                        let fire = st.version == d.version && st.end_at == Some(end);
+                        if fire {
+                            st.end_at = None;
+                        }
+                        drop(st);
+                        if fire {
+                            #[cfg(debug_assertions)]
+                            eprintln!("[pomo] {} phase-end id={} late={}ms", now, d.id, now - end);
+                            let _ = app.emit("phase-end", d.id);
+                        }
+                        continue;
+                    }
+                    let rem = end - now;
+                    set_tip(&app, &format!("{} · {}", fmt_mmss(rem), d.label));
+                    vis.update(&app, &d, rem, Kind::Running);
+                    // Sleep until the next whole-second boundary of the remaining time (or a change).
+                    let wait = match rem % 1000 { 0 => 1000, r => r };
+                    let st = t.state.lock().unwrap();
+                    if st.version == d.version {
+                        let _ = t.cv.wait_timeout(st, Duration::from_millis(wait)).unwrap();
+                    }
+                }
+            }
         }
     });
 }
@@ -250,4 +415,20 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Pomo");
+}
+
+#[cfg(test)]
+mod tests {
+    /// `POMO_ICON_DUMP=<dir> cargo test` writes raw 32x32 RGBA tray frames for visual checks.
+    #[test]
+    fn tray_icon_renders() {
+        let px = super::render_tray_icon(0.62, 18, [0xfe, 0x80, 0x19]);
+        assert_eq!(px.len(), 32 * 32 * 4);
+        assert_eq!(px[3], 0, "corners stay transparent");
+        if let Ok(dir) = std::env::var("POMO_ICON_DUMP") {
+            for (name, frac, min, acc) in [("focus", 0.62, 18, [0xfe, 0x80, 0x19]), ("short", 0.2, 1, [0xb8, 0xbb, 0x26]), ("paused", 0.9, 23, [0xa8, 0x99, 0x84])] {
+                std::fs::write(format!("{dir}/{name}.rgba"), super::render_tray_icon(frac, min, acc)).unwrap();
+            }
+        }
+    }
 }

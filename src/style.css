@@ -343,6 +343,30 @@ kbd {
 :root.fs .sheet { left: calc(50% - 200px); right: auto; width: 400px; top: auto; height: min(560px, 90vh); }
 :root.fs #btn-fs { color: var(--accent); }
 
+/* ---------- mini bar: one CLI-style line, same window ---------- */
+.mini { display: none; }
+:root.is-mini .app, :root.is-mini .sheet, :root.is-mini .toast { display: none; }
+:root.is-mini .mini {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 0 12px;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: grab;
+}
+.mini-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent);
+  transition: background-color var(--t-theme);
+}
+.mini-bar { color: var(--muted); letter-spacing: 0; }
+/* block glyphs come from Consolas (not in the bundled latin subset); keep the bar on one font */
+.mini-bar b, .mini-bar s { font-family: Consolas, "Cascadia Mono", monospace; font-weight: 400; text-decoration: none; }
+.mini-bar b { color: var(--accent); transition: color var(--t-theme); }
+.mini-bar s { color: var(--border); }
+.mini-time { font-weight: 700; color: var(--fg); }
+.mini-label { color: var(--accent); font-size: 11px; letter-spacing: .08em; transition: color var(--t-theme); }
+
 /* paused when hidden / minimized */
 :root.asleep *, :root.asleep *::before, :root.asleep *::after { animation-play-state: paused !important; }
 

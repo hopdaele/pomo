@@ -19,7 +19,8 @@ Pomo is a native Windows Pomodoro timer built for people who live on the keyboar
 
 **Built to disappear**
 - 1.3 MB installer, ~70 MB memory, effectively 0% CPU when idle or hidden
-- Lives in your system tray with a live countdown tooltip
+- Lives in your system tray: the icon itself is a draining ring with minutes left, plus a live countdown tooltip
+- Slim always-on-top mini bar (`● [██████░░░░] 18:42 focus`) and progress right on the taskbar button
 - Global hotkeys: start/pause and show/hide from any app
 
 **Built for focus**
