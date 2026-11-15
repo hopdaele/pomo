@@ -176,8 +176,15 @@ fn main() {
             let sep = PredefinedMenuItem::separator(app)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&toggle, &skip, &sep, &quit_i])?;
+            // Icons via include_bytes! so rustc tracks them: Tauri's built-in default icon is not
+            // dependency-tracked and silently goes stale when the icon files change.
+            let win_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/128x128.png"))?;
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_icon(win_icon);
+            }
             TrayIconBuilder::with_id(TRAY_ID)
-                .icon(app.default_window_icon().cloned().expect("icon"))
+                .icon(tray_icon)
                 .tooltip("Pomo")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
