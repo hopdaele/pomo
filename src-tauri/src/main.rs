@@ -80,6 +80,38 @@ fn set_global_shortcuts(app: AppHandle, enabled: bool) -> Result<(), String> {
     res
 }
 
+/// Tauri only sets the window's small icon on Windows; the taskbar reads the big one and otherwise
+/// falls back to Explorer's (possibly stale) per-path icon cache. Set ICON_BIG from the exe's own
+/// icon resource (id 32512, written by tauri-build) so the taskbar always matches the installed app.
+#[cfg(windows)]
+fn set_taskbar_icon(w: &tauri::WebviewWindow) {
+    use std::ffi::c_void;
+    #[link(name = "user32")]
+    extern "system" {
+        fn LoadImageW(inst: *mut c_void, name: *const u16, ty: u32, cx: i32, cy: i32, flags: u32) -> *mut c_void;
+        fn SendMessageW(hwnd: *mut c_void, msg: u32, wp: usize, lp: isize) -> isize;
+        fn GetSystemMetrics(i: i32) -> i32;
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetModuleHandleW(name: *const u16) -> *mut c_void;
+    }
+    const IMAGE_ICON: u32 = 1;
+    const WM_SETICON: u32 = 0x0080;
+    const ICON_BIG: usize = 1;
+    const SM_CXICON: i32 = 11;
+    const SM_CYICON: i32 = 12;
+    if let Ok(hwnd) = w.hwnd() {
+        unsafe {
+            let inst = GetModuleHandleW(std::ptr::null());
+            let icon = LoadImageW(inst, 32512 as *const u16, IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), 0);
+            if !icon.is_null() {
+                SendMessageW(hwnd.0 as *mut c_void, WM_SETICON, ICON_BIG, icon as isize);
+            }
+        }
+    }
+}
+
 fn show_window(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
@@ -182,6 +214,8 @@ fn main() {
             let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_icon(win_icon);
+                #[cfg(windows)]
+                set_taskbar_icon(&w);
             }
             TrayIconBuilder::with_id(TRAY_ID)
                 .icon(tray_icon)
