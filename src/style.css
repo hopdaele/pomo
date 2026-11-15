@@ -320,6 +320,29 @@ kbd {
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* ---------- full screen: big ring on black, chrome fades in only on hover ---------- */
+:root.fs { --dial: min(64vh, 80vw); }
+:root.fs .app { justify-content: center; }
+:root.fs .titlebar { position: absolute; top: 0; left: 0; right: 0; }
+:root.fs .modes { position: absolute; top: 44px; left: 0; right: 0; }
+:root.fs .dial { width: var(--dial); height: var(--dial); margin: 0 auto 4vh; }
+:root.fs .track, :root.fs .arc { stroke-width: 6; }
+:root.fs .time { font-size: calc(var(--dial) * .24); }
+:root.fs .phase { font-size: calc(var(--dial) * .045); margin-top: calc(var(--dial) * .05); }
+:root.fs .dots { gap: 1.6vh; height: 1.3vh; }
+:root.fs .dot { width: 1.3vh; height: 1.3vh; }
+:root.fs .controls { margin-top: 4vh; }
+:root.fs .footer { position: absolute; left: 0; right: 0; bottom: 0; justify-content: center; font-size: 1.6vh; padding: 3vh; }
+:root.fs .footer .link { display: none; }
+:root.fs .titlebar, :root.fs .modes, :root.fs .controls {
+  opacity: 0;
+  transition: opacity .35s var(--ease);
+}
+:root.fs .app:hover .titlebar, :root.fs .app:hover .modes, :root.fs .app:hover .controls,
+:root.fs .app:focus-within .controls { opacity: 1; }
+:root.fs .sheet { left: calc(50% - 200px); right: auto; width: 400px; top: auto; height: min(560px, 90vh); }
+:root.fs #btn-fs { color: var(--accent); }
+
 /* paused when hidden / minimized */
 :root.asleep *, :root.asleep *::before, :root.asleep *::after { animation-play-state: paused !important; }
 

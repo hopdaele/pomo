@@ -268,12 +268,12 @@
     const rem = S.endAt - Date.now();
     if (rem <= 0) { complete(S.runId); return; }
     const d = rem % 1000 || 1000;
+    // Glide (1s linear) to where we'll be at the next tick -- but only when the arc moves >= 2 device px/s.
+    // On long phases the per-second step is (near) sub-pixel, so a plain 1 Hz update looks the same and
+    // avoids ~60 repaints/s (measured: ~34% of a core -> ~1%). Ring size is read before any DOM writes.
+    const pxPerSec = (C * 1000 / S.total) * (el.ring.clientWidth / 240) * devicePixelRatio;
     el.time.textContent = mmss(rem);
-    // Glide (1s linear) to where we'll be at the next tick -- but only when the arc moves >= 1 device px/s.
-    // On long phases the per-second step is sub-pixel, so a plain 1 Hz update looks identical and avoids
-    // ~60 repaints/s (measured: ~34% of a core -> ~1%).
-    const pxPerSec = (C * 1000 / S.total) * (236 / 240) * devicePixelRatio;
-    setRing(rem - d, pxPerSec >= 1 ? d : 0);
+    setRing(rem - d, pxPerSec >= 2 ? d : 0);
     tickT = setTimeout(tick, d + 4);
   }
 
@@ -418,6 +418,25 @@
     setCfg('sound', !cfg.sound);
     toast(cfg.sound ? 'Sound on' : 'Muted');
   }
+  let fullscreen = false;
+  // A non-resizable window keeps its physical size when it lands on a monitor with a different
+  // scale (or leaves full screen there), cropping the UI. Re-assert the logical size.
+  const LogicalSize = (T.dpi || T.window).LogicalSize;
+  const fitWindow = () => { if (!fullscreen) win.setSize(new LogicalSize(360, 520)).catch(() => {}); };
+  win.onScaleChanged(fitWindow).catch(() => {});
+
+  function toggleFullscreen() {
+    const on = !fullscreen;
+    closePanel();
+    win.setFullscreen(on).then(() => {
+      fullscreen = on;
+      if (!on) fitWindow();
+      root.classList.toggle('fs', on);
+      if (S.running) tick(); else setRing(S.remaining, 0);
+      if (on) toast('Full screen · F or Esc to exit');
+    }).catch(() => toast('Full screen unavailable'));
+  }
+
   function toggleOnTop() {
     setCfg('onTop', !cfg.onTop);
     toast(cfg.onTop ? 'Pinned on top' : 'Unpinned');
@@ -446,8 +465,13 @@
   addEventListener('keydown', (e) => {
     const k = e.key;
     if (e.ctrlKey && (k === 'q' || k === 'Q')) { e.preventDefault(); invoke('quit'); return; }
+    if (k === 'F11') { e.preventDefault(); if (!e.repeat) toggleFullscreen(); return; }
     if (e.ctrlKey || e.altKey || e.metaKey || /^F\d+$/.test(k)) { e.preventDefault(); return; } // block browser accelerators
-    if (k === 'Escape') { e.preventDefault(); closePanel(); return; }
+    if (k === 'Escape') {
+      e.preventDefault();
+      if (panel) closePanel(); else if (fullscreen) toggleFullscreen();
+      return;
+    }
     if (k === 'Tab' && panel === 'help') { e.preventDefault(); return; }
     if (panel === 'settings' && settingsKey(e)) return;
     if (e.repeat) return;
@@ -457,6 +481,7 @@
       case ',': togglePanel('settings'); break;
       case 'm': case 'M': toggleMute(); break;
       case 'p': case 'P': toggleOnTop(); break;
+      case 'f': case 'F': toggleFullscreen(); break;
       case 'r': case 'R': press(el.reset); reset(); break;
       case 's': case 'S': press(el.skip); skip(); break;
       case '1': setMode('focus'); break;
@@ -487,6 +512,7 @@
   $('#btn-help').addEventListener('click', () => togglePanel('help'));
   $('#btn-settings').addEventListener('click', () => togglePanel('settings'));
   el.pin.addEventListener('click', toggleOnTop);
+  $('#btn-fs').addEventListener('click', toggleFullscreen);
   $('#btn-close').addEventListener('click', hideToTray);
   $('#btn-min').addEventListener('click', () => { setVisible(false); win.minimize(); });
   el.help.addEventListener('click', closePanel);
